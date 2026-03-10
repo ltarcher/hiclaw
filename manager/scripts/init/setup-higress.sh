@@ -17,6 +17,9 @@ MATRIX_DOMAIN="${HICLAW_MATRIX_DOMAIN:-matrix-local.hiclaw.io:8080}"
 MATRIX_CLIENT_DOMAIN="${HICLAW_MATRIX_CLIENT_DOMAIN:-matrix-client-local.hiclaw.io}"
 AI_GATEWAY_DOMAIN="${HICLAW_AI_GATEWAY_DOMAIN:-aigw-local.hiclaw.io}"
 FS_DOMAIN="${HICLAW_FS_DOMAIN:-fs-local.hiclaw.io}"
+MINIO_DOMAIN="${HICLAW_MINIO_DOMAIN:-127.0.0.1:9000}"
+TUWUNEL_DOMAIN="${HICLAW_TUWUNEL_DOMAIN:-127.0.0.1:6167}"
+ELEMENT_WEB_DOMAIN="${HICLAW_ELEMENT_WEB_DOMAIN:-127.0.0.1:8088}"
 
 LLM_PROVIDER="${HICLAW_LLM_PROVIDER:-qwen}"
 LLM_API_URL="${HICLAW_LLM_API_URL:-}"
@@ -27,7 +30,7 @@ if [ -z "${LLM_API_URL}" ]; then
     esac
 fi
 
-CONSOLE_URL="http://127.0.0.1:8001"
+CONSOLE_URL="${HICLAW_HIGRESS_CONSOLE_URL:-http://127.0.0.1:8001}"
 
 # ============================================================
 # Helper: call Higress Console API, log result, never fail.
@@ -97,11 +100,11 @@ if [ ! -f "${SETUP_MARKER}" ]; then
 
     # 0. Local service sources
     higress_api POST /v1/service-sources "Registering Tuwunel service source" \
-        '{"name":"tuwunel","type":"static","domain":"127.0.0.1:6167","port":6167,"properties":{},"authN":{"enabled":false}}'
+        '{"name":"tuwunel","type":"static","domain":"'"${TUWUNEL_DOMAIN}"'","port":6167,"properties":{},"authN":{"enabled":false}}'
     higress_api POST /v1/service-sources "Registering Element Web service source" \
-        '{"name":"element-web","type":"static","domain":"127.0.0.1:8088","port":8088,"properties":{},"authN":{"enabled":false}}'
+        '{"name":"element-web","type":"static","domain":"'"${ELEMENT_WEB_DOMAIN}"'","port":8088,"properties":{},"authN":{"enabled":false}}'
     higress_api POST /v1/service-sources "Registering MinIO service source" \
-        '{"name":"minio","type":"static","domain":"127.0.0.1:9000","port":9000,"properties":{},"authN":{"enabled":false}}'
+        '{"name":"minio","type":"static","domain":"'"${MINIO_DOMAIN}"'","port":9000,"properties":{},"authN":{"enabled":false}}'
 
     # 1. Manager Consumer
     higress_api POST /v1/consumers "Creating Manager consumer" \

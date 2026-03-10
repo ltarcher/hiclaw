@@ -17,6 +17,13 @@ fi
 
 MATRIX_DOMAIN="${HICLAW_MATRIX_DOMAIN:-matrix-local.hiclaw.io:8080}"
 AI_GATEWAY_DOMAIN="${HICLAW_AI_GATEWAY_DOMAIN:-aigw-local.hiclaw.io}"
+MINIO_HOST="${HICLAW_MINIO_HOST:-127.0.0.1}"
+HIGRESS_HOST="${HICLAW_HIGRESS_HOST:-127.0.0.1}"
+TUWUNEL_HOST="${HICLAW_TUWUNEL_HOST:-127.0.0.1}"
+MATRIX_HOST="${HICLAW_MATRIX_HOST:-127.0.0.1}"
+AI_GATEWAY_HOST="${HICLAW_AI_GATEWAY_HOST:-127.0.0.1}"
+FS_HOST="${HICLAW_FS_HOST:-127.0.0.1}"
+HICLAW_HIGRESS_CONSOLE_URL="${HICLAW_HIGRESS_CONSOLE_URL:-http://127.0.0.1:8001}"
 
 # ============================================================
 # Create symlink for host directory access
@@ -46,11 +53,28 @@ else
     log "Host share directory (/host-share) not found, skipping symlink creation"
 fi
 
-# Add local domains to /etc/hosts so they resolve inside the container
-HOSTS_DOMAINS="${MATRIX_DOMAIN%%:*} ${HICLAW_MATRIX_CLIENT_DOMAIN:-matrix-client-local.hiclaw.io} ${AI_GATEWAY_DOMAIN} ${HICLAW_FS_DOMAIN:-fs-local.hiclaw.io}"
-if ! grep -q "${AI_GATEWAY_DOMAIN}" /etc/hosts 2>/dev/null; then
-    echo "127.0.0.1 ${HOSTS_DOMAINS}" >> /etc/hosts
-    log "Added local domains to /etc/hosts"
+# Add domains to /etc/hosts or use external DNS
+if [ -n "${HICLAW_USE_EXTERNAL_DNS}" ] && [ "${HICLAW_USE_EXTERNAL_DNS}" = "true" ]; then
+    log "Using external DNS for domain resolution"
+else
+    # Add local domains to /etc/hosts
+    MATRIX_CLIENT_DOMAIN="${HICLAW_MATRIX_CLIENT_DOMAIN:-matrix-client-local.hiclaw.io}"
+    FS_DOMAIN="${HICLAW_FS_DOMAIN:-fs-local.hiclaw.io}"
+    
+    # Add each domain with its respective host
+    if ! grep -q "${MATRIX_DOMAIN%%:*}" /etc/hosts 2>/dev/null; then
+        echo "${MATRIX_HOST} ${MATRIX_DOMAIN%%:*}" >> /etc/hosts
+    fi
+    if ! grep -q "${MATRIX_CLIENT_DOMAIN}" /etc/hosts 2>/dev/null; then
+        echo "${MATRIX_HOST} ${MATRIX_CLIENT_DOMAIN}" >> /etc/hosts
+    fi
+    if ! grep -q "${AI_GATEWAY_DOMAIN}" /etc/hosts 2>/dev/null; then
+        echo "${AI_GATEWAY_HOST} ${AI_GATEWAY_DOMAIN}" >> /etc/hosts
+    fi
+    if ! grep -q "${FS_DOMAIN}" /etc/hosts 2>/dev/null; then
+        echo "${FS_HOST} ${FS_DOMAIN}" >> /etc/hosts
+    fi
+    log "Added domains to /etc/hosts"
 fi
 
 # ============================================================
@@ -83,11 +107,11 @@ chmod 600 "${SECRETS_FILE}"
 # ============================================================
 # Wait for all dependencies
 # ============================================================
-waitForService "Higress Gateway" "127.0.0.1" 8080 180
-waitForService "Higress Console" "127.0.0.1" 8001 180
-waitForService "Tuwunel" "127.0.0.1" 6167 120
-waitForHTTP "Tuwunel Matrix API" "http://127.0.0.1:6167/_tuwunel/server_version" 120
-waitForService "MinIO" "127.0.0.1" 9000 120
+waitForService "Higress Gateway" "${HIGRESS_HOST}" 8080 180
+waitForService "Higress Console" "${HIGRESS_HOST}" 8001 180
+waitForService "Tuwunel" "${TUWUNEL_HOST}" 6167 120
+waitForHTTP "Tuwunel Matrix API" "http://${TUWUNEL_HOST}:6167/_tuwunel/server_version" 120
+waitForService "MinIO" "${MINIO_HOST}" 9000 120
 
 # ============================================================
 # Initialize / upgrade Manager workspace (local only, not synced to MinIO)
@@ -121,7 +145,7 @@ log "MinIO storage initialized"
 # Register Matrix users via Registration API (single-step, no UIAA)
 # ============================================================
 log "Registering human admin Matrix account..."
-curl -sf -X POST http://127.0.0.1:6167/_matrix/client/v3/register \
+curl -sf -X POST http://${TUWUNEL_HOST}:6167/_matrix/client/v3/register \
     -H 'Content-Type: application/json' \
     -d '{
         "username": "'"${HICLAW_ADMIN_USER}"'",
@@ -133,7 +157,7 @@ curl -sf -X POST http://127.0.0.1:6167/_matrix/client/v3/register \
     }' > /dev/null 2>&1 || log "Admin account may already exist"
 
 log "Registering Manager Agent Matrix account..."
-curl -sf -X POST http://127.0.0.1:6167/_matrix/client/v3/register \
+curl -sf -X POST http://${TUWUNEL_HOST}:6167/_matrix/client/v3/register \
     -H 'Content-Type: application/json' \
     -d '{
         "username": "manager",
@@ -146,7 +170,7 @@ curl -sf -X POST http://127.0.0.1:6167/_matrix/client/v3/register \
 
 # Get Manager Agent's Matrix access token
 log "Obtaining Manager Matrix access token..."
-_LOGIN_RESPONSE=$(curl -sf -X POST http://127.0.0.1:6167/_matrix/client/v3/login \
+_LOGIN_RESPONSE=$(curl -sf -X POST http://${TUWUNEL_HOST}:6167/_matrix/client/v3/login \
     -H 'Content-Type: application/json' \
     -d '{
         "type": "m.login.password",
@@ -178,7 +202,7 @@ COOKIE_FILE="/tmp/higress-session-cookie"
 log "Waiting for Higress Console to be fully ready and initializing admin..."
 INIT_DONE=false
 for i in $(seq 1 90); do
-    INIT_RESULT=$(curl -s -X POST http://127.0.0.1:8001/system/init \
+    INIT_RESULT=$(curl -s -X POST ${HICLAW_HIGRESS_CONSOLE_URL}/system/init \
         -H 'Content-Type: application/json' \
         -d '{"adminUser":{"name":"'"${HICLAW_ADMIN_USER}"'","password":"'"${HICLAW_ADMIN_PASSWORD}"'","displayName":"'"${HICLAW_ADMIN_USER}"'"}}' 2>/dev/null) || true
     if echo "${INIT_RESULT}" | grep -qE '"success":true|already.?init' 2>/dev/null; then
@@ -202,7 +226,7 @@ log "Higress Console init done"
 log "Logging into Higress Console..."
 LOGIN_OK=false
 for i in $(seq 1 10); do
-    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8001/session/login \
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST ${HICLAW_HIGRESS_CONSOLE_URL}/session/login \
         -H 'Content-Type: application/json' \
         -c "${COOKIE_FILE}" \
         -d '{"username":"'"${HICLAW_ADMIN_USER}"'","password":"'"${HICLAW_ADMIN_PASSWORD}"'"}' 2>/dev/null) || true
@@ -221,7 +245,7 @@ fi
 log "Higress Console login successful"
 
 # Verify cookie is valid by calling an API endpoint
-VERIFY_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8001/v1/consumers -b "${COOKIE_FILE}" 2>/dev/null) || true
+VERIFY_CODE=$(curl -s -o /dev/null -w '%{http_code}' ${HICLAW_HIGRESS_CONSOLE_URL}/v1/consumers -b "${COOKIE_FILE}" 2>/dev/null) || true
 if [ "${VERIFY_CODE}" = "200" ]; then
     log "Console session verified (cookie valid)"
 else
@@ -229,11 +253,11 @@ else
     # Try re-login with a fresh cookie file
     rm -f "${COOKIE_FILE}"
     for i in $(seq 1 5); do
-        curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8001/session/login \
+        curl -s -o /dev/null -w '%{http_code}' -X POST ${HICLAW_HIGRESS_CONSOLE_URL}/session/login \
             -H 'Content-Type: application/json' \
             -c "${COOKIE_FILE}" \
             -d '{"username":"'"${HICLAW_ADMIN_USER}"'","password":"'"${HICLAW_ADMIN_PASSWORD}"'"}' 2>/dev/null
-        VERIFY2=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8001/v1/consumers -b "${COOKIE_FILE}" 2>/dev/null) || true
+        VERIFY2=$(curl -s -o /dev/null -w '%{http_code}' ${HICLAW_HIGRESS_CONSOLE_URL}/v1/consumers -b "${COOKIE_FILE}" 2>/dev/null) || true
         if [ "${VERIFY2}" = "200" ]; then
             log "Re-login successful, session verified"
             break
