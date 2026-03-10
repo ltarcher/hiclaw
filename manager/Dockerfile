@@ -79,7 +79,8 @@ RUN chmod +x /opt/hiclaw/scripts/init/*.sh /opt/hiclaw/scripts/lib/*.sh && \
 # 8080: Higress Gateway (unified entry point)
 # 8001: Higress Console
 # 9001: MinIO Console
-EXPOSE 8080 8001 9001
+# 分离模式不需要暴露minio/higress端口
+#EXPOSE 8080 8001 9001
 
 # ---- Persistent data ----
 # /data: MinIO object storage, secrets, worker credentials
