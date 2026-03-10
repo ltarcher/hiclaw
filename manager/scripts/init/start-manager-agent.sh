@@ -107,11 +107,8 @@ chmod 600 "${SECRETS_FILE}"
 # ============================================================
 # Wait for all dependencies
 # ============================================================
-waitForService "Higress Gateway" "${HIGRESS_HOST}" 8080 180
-waitForService "Higress Console" "${HIGRESS_HOST}" 8001 180
 waitForService "Tuwunel" "${TUWUNEL_HOST}" 6167 120
 waitForHTTP "Tuwunel Matrix API" "http://${TUWUNEL_HOST}:6167/_tuwunel/server_version" 120
-waitForService "MinIO" "${MINIO_HOST}" 9000 120
 
 # ============================================================
 # Initialize / upgrade Manager workspace (local only, not synced to MinIO)
@@ -136,10 +133,8 @@ else
     log "Workspace up to date (version: ${IMAGE_VERSION})"
 fi
 
-# Wait for mc mirror initialization (shared + worker data in /root/hiclaw-fs/)
-log "Waiting for MinIO storage initialization..."
-while [ ! -f /root/hiclaw-fs/.initialized ]; do sleep 2; done
-log "MinIO storage initialized"
+# Note: MinIO storage is now external, skipping local initialization
+log "Using external MinIO storage"
 
 # ============================================================
 # Register Matrix users via Registration API (single-step, no UIAA)
